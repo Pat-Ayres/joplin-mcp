@@ -1,0 +1,31 @@
+# Docker Compose stack for e2e testing.
+#
+# Spins up a headless Joplin terminal CLI exposing the Data API,
+# then runs the Go e2e test suite against it.
+#
+# Usage:
+#   docker compose -f docker-compose.test.yml up --build --abort-on-container-exit --exit-code-from e2e
+
+services:
+  joplin:
+    build:
+      context: ./e2e/joplin-headless
+    environment:
+      JOPLIN_API_TOKEN: test-token-e2e
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8080/ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 15
+      start_period: 30s
+
+  e2e:
+    build:
+      context: .
+      dockerfile: Dockerfile.test
+    environment:
+      JOPLIN_API_URL: "http://joplin:8080"
+      JOPLIN_API_TOKEN: test-token-e2e
+    depends_on:
+      joplin:
+        condition: service_healthy

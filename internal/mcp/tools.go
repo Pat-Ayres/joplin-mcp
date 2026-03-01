@@ -11,7 +11,7 @@ import (
 )
 
 // RegisterTools adds all Joplin MCP tools to the given server.
-func RegisterTools(s *server.MCPServer, client *joplin.Client) {
+func RegisterTools(s *server.MCPServer, client joplin.JoplinClient) {
 	s.AddTool(listNotebooksTool(), listNotebooksHandler(client))
 	s.AddTool(listNotesTool(), listNotesHandler(client))
 	s.AddTool(getNoteTool(), getNoteHandler(client))
@@ -29,7 +29,7 @@ func listNotebooksTool() mcp.Tool {
 	)
 }
 
-func listNotebooksHandler(client *joplin.Client) server.ToolHandlerFunc {
+func listNotebooksHandler(client joplin.JoplinClient) server.ToolHandlerFunc {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		notebooks, err := client.ListNotebooks()
 		if err != nil {
@@ -57,7 +57,7 @@ func listNotesTool() mcp.Tool {
 	)
 }
 
-func listNotesHandler(client *joplin.Client) server.ToolHandlerFunc {
+func listNotesHandler(client joplin.JoplinClient) server.ToolHandlerFunc {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		notebookID := request.GetString("notebook_id", "")
 		if notebookID == "" {
@@ -90,7 +90,7 @@ func getNoteTool() mcp.Tool {
 	)
 }
 
-func getNoteHandler(client *joplin.Client) server.ToolHandlerFunc {
+func getNoteHandler(client joplin.JoplinClient) server.ToolHandlerFunc {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		noteID := request.GetString("note_id", "")
 		if noteID == "" {
@@ -131,7 +131,7 @@ func createNoteTool() mcp.Tool {
 	)
 }
 
-func createNoteHandler(client *joplin.Client) server.ToolHandlerFunc {
+func createNoteHandler(client joplin.JoplinClient) server.ToolHandlerFunc {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		title := request.GetString("title", "")
 		body := request.GetString("body", "")
@@ -174,7 +174,7 @@ func appendToNoteTool() mcp.Tool {
 	)
 }
 
-func appendToNoteHandler(client *joplin.Client) server.ToolHandlerFunc {
+func appendToNoteHandler(client joplin.JoplinClient) server.ToolHandlerFunc {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		noteID := request.GetString("note_id", "")
 		content := request.GetString("content", "")
@@ -207,7 +207,7 @@ func searchNotesTool() mcp.Tool {
 	)
 }
 
-func searchNotesHandler(client *joplin.Client) server.ToolHandlerFunc {
+func searchNotesHandler(client joplin.JoplinClient) server.ToolHandlerFunc {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		query := request.GetString("query", "")
 		if query == "" {
@@ -247,7 +247,7 @@ func createNotebookTool() mcp.Tool {
 	)
 }
 
-func createNotebookHandler(client *joplin.Client) server.ToolHandlerFunc {
+func createNotebookHandler(client joplin.JoplinClient) server.ToolHandlerFunc {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		title := request.GetString("title", "")
 		parentID := request.GetString("parent_id", "")

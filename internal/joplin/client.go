@@ -9,6 +9,17 @@ import (
 	"strings"
 )
 
+// JoplinClient defines the interface for interacting with the Joplin API.
+type JoplinClient interface {
+	ListNotebooks() ([]Notebook, error)
+	ListNotes(notebookID string) ([]Note, error)
+	GetNote(noteID string) (*Note, error)
+	CreateNote(title, body, notebookID string) (*Note, error)
+	AppendToNote(noteID, content string) (*Note, error)
+	SearchNotes(query string) ([]Note, error)
+	CreateNotebook(title, parentID string) (*Notebook, error)
+}
+
 // Client wraps the Joplin REST API.
 type Client struct {
 	BaseURL    string
