@@ -1,0 +1,10 @@
+# Joplin MCP Server Configuration
+#
+# The API token can also be set via the JOPLIN_API_TOKEN environment variable.
+# Environment variables take precedence over this file.
+
+# Joplin REST API token (found in Joplin: Tools > Options > Web Clipper)
+api_token: "YOUR_JOPLIN_API_TOKEN_HERE"
+
+# Joplin REST API base URL (default: http://localhost:41184)
+api_url: "http://localhost:41184"
