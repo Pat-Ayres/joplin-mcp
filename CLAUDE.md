@@ -5,11 +5,12 @@ Go MCP server wrapping the Joplin REST API.
 ## Build & Test
 
 ```bash
-go build ./cmd/server/       # build the server binary
-go vet ./...                  # static analysis
-go test ./internal/...        # unit + integration tests
+make build                    # build the server binary into bin/
+make install                  # install binary to $GOBIN for use as a user-scoped MCP server
+make vet                      # static analysis
 make test                     # vet + unit tests
 make test-e2e                 # e2e tests via Docker Compose (requires Docker)
+make help                     # show all targets
 ```
 
 ## Architecture

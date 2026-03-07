@@ -1,6 +1,5 @@
-# Go binaries (root level only)
-/server
-/joplin-mcp
+# Build output
+/bin/
 
 # IDE
 .idea/
