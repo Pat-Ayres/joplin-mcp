@@ -30,11 +30,14 @@ func TestMain(m *testing.M) {
 func TestE2EWorkflow(t *testing.T) {
 	var notebookID string
 	var noteID string
+	var todoID string
 	const (
 		notebookTitle = "e2e-test-notebook"
 		noteTitle     = "e2e-test-note"
 		noteBody      = "This is the original body."
 		appendContent = "This was appended."
+		todoTitle     = "e2e-test-todo"
+		todoBody      = "E2E todo body."
 	)
 
 	t.Run("CreateNotebook", func(t *testing.T) {
@@ -181,5 +184,88 @@ func TestE2EWorkflow(t *testing.T) {
 			t.Errorf("expected parent_id %q, got %q", notebookID, child.ParentID)
 		}
 		t.Logf("Created child notebook: %s (ID: %s, parent: %s)", child.Title, child.ID, child.ParentID)
+	})
+
+	// --- To-do flow ---
+
+	t.Run("CreateTodo", func(t *testing.T) {
+		if notebookID == "" {
+			t.Skip("depends on CreateNotebook")
+		}
+		note, err := client.CreateTodo(todoTitle, todoBody, notebookID, 0)
+		if err != nil {
+			t.Fatalf("CreateTodo failed: %v", err)
+		}
+		if note.ID == "" {
+			t.Fatal("expected non-empty todo ID")
+		}
+		if note.Title != todoTitle {
+			t.Errorf("expected title %q, got %q", todoTitle, note.Title)
+		}
+		if note.IsTodo != 1 {
+			t.Errorf("expected IsTodo 1, got %d", note.IsTodo)
+		}
+		todoID = note.ID
+		t.Logf("Created todo: %s (ID: %s)", note.Title, note.ID)
+	})
+
+	t.Run("ListTodos", func(t *testing.T) {
+		if notebookID == "" || todoID == "" {
+			t.Skip("depends on CreateNotebook + CreateTodo")
+		}
+		todos, err := client.ListTodos(notebookID)
+		if err != nil {
+			t.Fatalf("ListTodos failed: %v", err)
+		}
+		found := false
+		for _, td := range todos {
+			if td.ID == todoID {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("todo %s not found in ListTodos for notebook %s (got %d todos)", todoID, notebookID, len(todos))
+		}
+	})
+
+	t.Run("MarkTodoCompleted", func(t *testing.T) {
+		if todoID == "" {
+			t.Skip("depends on CreateTodo")
+		}
+		note, err := client.MarkTodoCompleted(todoID)
+		if err != nil {
+			t.Fatalf("MarkTodoCompleted failed: %v", err)
+		}
+		if note.TodoCompleted == 0 {
+			t.Error("expected TodoCompleted to be set (non-zero)")
+		}
+		t.Logf("Marked todo %s completed at %d", note.ID, note.TodoCompleted)
+	})
+
+	t.Run("GetNote_ShowsTodoCompleted", func(t *testing.T) {
+		if todoID == "" {
+			t.Skip("depends on CreateTodo")
+		}
+		note, err := client.GetNote(todoID)
+		if err != nil {
+			t.Fatalf("GetNote(todo) failed: %v", err)
+		}
+		if note.TodoCompleted == 0 {
+			t.Error("expected todo to remain completed after GetNote")
+		}
+	})
+
+	t.Run("MarkTodoUncompleted", func(t *testing.T) {
+		if todoID == "" {
+			t.Skip("depends on CreateTodo")
+		}
+		note, err := client.MarkTodoUncompleted(todoID)
+		if err != nil {
+			t.Fatalf("MarkTodoUncompleted failed: %v", err)
+		}
+		if note.TodoCompleted != 0 {
+			t.Errorf("expected TodoCompleted 0 after uncomplete, got %d", note.TodoCompleted)
+		}
 	})
 }

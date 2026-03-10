@@ -364,6 +364,200 @@ func TestCreateNotebook_WithParent(t *testing.T) {
 	}
 }
 
+func TestCreateTodo(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/notes" {
+			t.Errorf("expected POST /notes, got %s %s", r.Method, r.URL.Path)
+		}
+		body, _ := io.ReadAll(r.Body)
+		var payload map[string]interface{}
+		json.Unmarshal(body, &payload)
+		if title, _ := payload["title"].(string); title != "My Todo" {
+			t.Errorf("expected title 'My Todo', got %v", payload["title"])
+		}
+		if bodyVal, _ := payload["body"].(string); bodyVal != "Do something" {
+			t.Errorf("expected body 'Do something', got %v", payload["body"])
+		}
+		if parent, _ := payload["parent_id"].(string); parent != "nb-1" {
+			t.Errorf("expected parent_id 'nb-1', got %v", payload["parent_id"])
+		}
+		if isTodo, _ := payload["is_todo"].(float64); isTodo != 1 {
+			t.Errorf("expected is_todo 1, got %v", payload["is_todo"])
+		}
+		if _, hasDue := payload["todo_due"]; hasDue {
+			t.Error("expected no todo_due when dueUnixMs is 0")
+		}
+		json.NewEncoder(w).Encode(Note{
+			ID:       "todo-1",
+			ParentID: "nb-1",
+			Title:    "My Todo",
+			Body:     "Do something",
+			IsTodo:   1,
+		})
+	}))
+	defer ts.Close()
+
+	c := newTestClient(ts)
+	note, err := c.CreateTodo("My Todo", "Do something", "nb-1", 0)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if note.ID != "todo-1" || note.IsTodo != 1 {
+		t.Errorf("unexpected note: %+v", note)
+	}
+}
+
+func TestCreateTodo_WithDue(t *testing.T) {
+	dueMs := int64(1735689600000) // 2025-01-01 00:00:00 UTC
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		var payload map[string]interface{}
+		json.Unmarshal(body, &payload)
+		if payload["is_todo"].(float64) != 1 {
+			t.Error("expected is_todo 1")
+		}
+		if got, _ := payload["todo_due"].(float64); int64(got) != dueMs {
+			t.Errorf("expected todo_due %d, got %v", dueMs, payload["todo_due"])
+		}
+		json.NewEncoder(w).Encode(Note{
+			ID:        "todo-2",
+			ParentID:  "nb-1",
+			Title:     "Due Todo",
+			IsTodo:    1,
+			TodoDue:   dueMs,
+		})
+	}))
+	defer ts.Close()
+
+	c := newTestClient(ts)
+	note, err := c.CreateTodo("Due Todo", "body", "nb-1", dueMs)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if note.TodoDue != dueMs {
+		t.Errorf("expected TodoDue %d, got %d", dueMs, note.TodoDue)
+	}
+}
+
+func TestMarkTodoCompleted(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPut {
+			t.Errorf("expected PUT, got %s", r.Method)
+		}
+		if r.URL.Path != "/notes/todo-1" {
+			t.Errorf("expected path /notes/todo-1, got %s", r.URL.Path)
+		}
+		body, _ := io.ReadAll(r.Body)
+		var payload map[string]interface{}
+		json.Unmarshal(body, &payload)
+		if completed, ok := payload["todo_completed"].(float64); !ok || completed <= 0 {
+			t.Errorf("expected todo_completed to be positive timestamp, got %v", payload["todo_completed"])
+		}
+		json.NewEncoder(w).Encode(Note{
+			ID:             "todo-1",
+			Title:          "Done",
+			IsTodo:         1,
+			TodoCompleted:  1704067200000,
+		})
+	}))
+	defer ts.Close()
+
+	c := newTestClient(ts)
+	note, err := c.MarkTodoCompleted("todo-1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if note.ID != "todo-1" || note.TodoCompleted == 0 {
+		t.Errorf("unexpected note: %+v", note)
+	}
+}
+
+func TestMarkTodoUncompleted(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPut || r.URL.Path != "/notes/todo-1" {
+			t.Errorf("expected PUT /notes/todo-1, got %s %s", r.Method, r.URL.Path)
+		}
+		body, _ := io.ReadAll(r.Body)
+		var payload map[string]interface{}
+		json.Unmarshal(body, &payload)
+		if completed, _ := payload["todo_completed"].(float64); completed != 0 {
+			t.Errorf("expected todo_completed 0, got %v", payload["todo_completed"])
+		}
+		json.NewEncoder(w).Encode(Note{
+			ID:            "todo-1",
+			Title:         "Reopened",
+			IsTodo:        1,
+			TodoCompleted: 0,
+		})
+	}))
+	defer ts.Close()
+
+	c := newTestClient(ts)
+	note, err := c.MarkTodoUncompleted("todo-1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if note.TodoCompleted != 0 {
+		t.Errorf("expected TodoCompleted 0, got %d", note.TodoCompleted)
+	}
+}
+
+func TestListTodos_InNotebook(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/folders/nb-1/notes" {
+			t.Errorf("expected path /folders/nb-1/notes, got %s", r.URL.Path)
+		}
+		if got := r.URL.Query().Get("fields"); got != noteFieldsWithTodo {
+			t.Errorf("expected fields %q, got %q", noteFieldsWithTodo, got)
+		}
+		json.NewEncoder(w).Encode(map[string]any{
+			"items": []map[string]any{
+				{"id": "todo-1", "parent_id": "nb-1", "title": "Todo A", "is_todo": 1, "todo_due": 0, "todo_completed": 0},
+				{"id": "note-1", "parent_id": "nb-1", "title": "Regular Note", "is_todo": 0, "todo_due": 0, "todo_completed": 0},
+				{"id": "todo-2", "parent_id": "nb-1", "title": "Todo B", "is_todo": 1, "todo_due": 0, "todo_completed": 1735689600000},
+			},
+			"has_more": false,
+		})
+	}))
+	defer ts.Close()
+
+	c := newTestClient(ts)
+	todos, err := c.ListTodos("nb-1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(todos) != 2 {
+		t.Fatalf("expected 2 todos (filtered), got %d", len(todos))
+	}
+	if todos[0].Title != "Todo A" || todos[1].Title != "Todo B" {
+		t.Errorf("unexpected todos: %+v", todos)
+	}
+}
+
+func TestListTodos_All(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/notes" {
+			t.Errorf("expected path /notes, got %s", r.URL.Path)
+		}
+		json.NewEncoder(w).Encode(map[string]any{
+			"items": []map[string]any{
+				{"id": "todo-1", "parent_id": "nb-1", "title": "Only Todo", "is_todo": 1, "todo_due": 0, "todo_completed": 0},
+			},
+			"has_more": false,
+		})
+	}))
+	defer ts.Close()
+
+	c := newTestClient(ts)
+	todos, err := c.ListTodos("")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(todos) != 1 || todos[0].ID != "todo-1" {
+		t.Fatalf("expected 1 todo, got %d: %+v", len(todos), todos)
+	}
+}
+
 // contains is a simple substring check helper.
 func contains(s, substr string) bool {
 	return len(s) >= len(substr) && searchSubstring(s, substr)

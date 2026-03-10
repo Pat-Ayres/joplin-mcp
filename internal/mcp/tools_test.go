@@ -16,13 +16,17 @@ import (
 // --- mock client ---
 
 type mockClient struct {
-	listNotebooksFunc  func() ([]joplin.Notebook, error)
-	listNotesFunc      func(string) ([]joplin.Note, error)
-	getNoteFunc        func(string) (*joplin.Note, error)
-	createNoteFunc     func(string, string, string) (*joplin.Note, error)
-	appendToNoteFunc   func(string, string) (*joplin.Note, error)
-	searchNotesFunc    func(string) ([]joplin.Note, error)
-	createNotebookFunc func(string, string) (*joplin.Notebook, error)
+	listNotebooksFunc       func() ([]joplin.Notebook, error)
+	listNotesFunc          func(string) ([]joplin.Note, error)
+	getNoteFunc            func(string) (*joplin.Note, error)
+	createNoteFunc         func(string, string, string) (*joplin.Note, error)
+	appendToNoteFunc       func(string, string) (*joplin.Note, error)
+	searchNotesFunc        func(string) ([]joplin.Note, error)
+	createNotebookFunc     func(string, string) (*joplin.Notebook, error)
+	createTodoFunc         func(string, string, string, int64) (*joplin.Note, error)
+	markTodoCompletedFunc  func(string) (*joplin.Note, error)
+	markTodoUncompletedFunc func(string) (*joplin.Note, error)
+	listTodosFunc          func(string) ([]joplin.Note, error)
 }
 
 func (m *mockClient) ListNotebooks() ([]joplin.Notebook, error) {
@@ -46,6 +50,18 @@ func (m *mockClient) SearchNotes(query string) ([]joplin.Note, error) {
 func (m *mockClient) CreateNotebook(title, parentID string) (*joplin.Notebook, error) {
 	return m.createNotebookFunc(title, parentID)
 }
+func (m *mockClient) CreateTodo(title, body, notebookID string, dueUnixMs int64) (*joplin.Note, error) {
+	return m.createTodoFunc(title, body, notebookID, dueUnixMs)
+}
+func (m *mockClient) MarkTodoCompleted(noteID string) (*joplin.Note, error) {
+	return m.markTodoCompletedFunc(noteID)
+}
+func (m *mockClient) MarkTodoUncompleted(noteID string) (*joplin.Note, error) {
+	return m.markTodoUncompletedFunc(noteID)
+}
+func (m *mockClient) ListTodos(notebookID string) ([]joplin.Note, error) {
+	return m.listTodosFunc(notebookID)
+}
 
 // --- helpers ---
 
@@ -63,6 +79,10 @@ func newTestServer(t *testing.T, mock *mockClient) *mcptest.Server {
 	ts.AddTool(appendToNoteTool(), appendToNoteHandler(mock))
 	ts.AddTool(searchNotesTool(), searchNotesHandler(mock))
 	ts.AddTool(createNotebookTool(), createNotebookHandler(mock))
+	ts.AddTool(createTodoTool(), createTodoHandler(mock))
+	ts.AddTool(markTodoCompletedTool(), markTodoCompletedHandler(mock))
+	ts.AddTool(markTodoUncompletedTool(), markTodoUncompletedHandler(mock))
+	ts.AddTool(listTodosTool(), listTodosHandler(mock))
 
 	if err := ts.Start(context.Background()); err != nil {
 		t.Fatalf("failed to start test server: %v", err)
@@ -96,15 +116,7 @@ func resultText(result *mcp.CallToolResult) string {
 // --- tests ---
 
 func TestListTools(t *testing.T) {
-	mock := &mockClient{
-		listNotebooksFunc:  func() ([]joplin.Notebook, error) { return nil, nil },
-		listNotesFunc:      func(string) ([]joplin.Note, error) { return nil, nil },
-		getNoteFunc:        func(string) (*joplin.Note, error) { return nil, nil },
-		createNoteFunc:     func(string, string, string) (*joplin.Note, error) { return nil, nil },
-		appendToNoteFunc:   func(string, string) (*joplin.Note, error) { return nil, nil },
-		searchNotesFunc:    func(string) ([]joplin.Note, error) { return nil, nil },
-		createNotebookFunc: func(string, string) (*joplin.Notebook, error) { return nil, nil },
-	}
+	mock := newFullMockClient()
 	ts := newTestServer(t, mock)
 
 	req := mcp.ListToolsRequest{}
@@ -114,13 +126,17 @@ func TestListTools(t *testing.T) {
 	}
 
 	expectedTools := map[string]bool{
-		"list_notebooks": false,
-		"list_notes":     false,
-		"get_note":       false,
-		"create_note":    false,
-		"append_to_note": false,
-		"search_notes":   false,
-		"create_notebook": false,
+		"list_notebooks":      false,
+		"list_notes":          false,
+		"get_note":            false,
+		"create_note":         false,
+		"append_to_note":     false,
+		"search_notes":       false,
+		"create_notebook":    false,
+		"create_todo":        false,
+		"mark_todo_completed": false,
+		"mark_todo_uncompleted": false,
+		"list_todos":         false,
 	}
 
 	for _, tool := range result.Tools {
@@ -135,8 +151,25 @@ func TestListTools(t *testing.T) {
 		}
 	}
 
-	if len(result.Tools) != 7 {
-		t.Errorf("expected 7 tools, got %d", len(result.Tools))
+	if len(result.Tools) != 11 {
+		t.Errorf("expected 11 tools, got %d", len(result.Tools))
+	}
+}
+
+// newFullMockClient returns a mock with all funcs set (no-op returns) for tests that only need a valid client.
+func newFullMockClient() *mockClient {
+	return &mockClient{
+		listNotebooksFunc:       func() ([]joplin.Notebook, error) { return nil, nil },
+		listNotesFunc:          func(string) ([]joplin.Note, error) { return nil, nil },
+		getNoteFunc:            func(string) (*joplin.Note, error) { return nil, nil },
+		createNoteFunc:         func(string, string, string) (*joplin.Note, error) { return nil, nil },
+		appendToNoteFunc:       func(string, string) (*joplin.Note, error) { return nil, nil },
+		searchNotesFunc:        func(string) ([]joplin.Note, error) { return nil, nil },
+		createNotebookFunc:     func(string, string) (*joplin.Notebook, error) { return nil, nil },
+		createTodoFunc:         func(string, string, string, int64) (*joplin.Note, error) { return nil, nil },
+		markTodoCompletedFunc:  func(string) (*joplin.Note, error) { return nil, nil },
+		markTodoUncompletedFunc: func(string) (*joplin.Note, error) { return nil, nil },
+		listTodosFunc:          func(string) ([]joplin.Note, error) { return nil, nil },
 	}
 }
 
@@ -460,19 +493,170 @@ func TestHandler_ClientError(t *testing.T) {
 
 // Verify RegisterTools wires up the same tools as our test helper.
 func TestRegisterTools(t *testing.T) {
-	mock := &mockClient{
-		listNotebooksFunc:  func() ([]joplin.Notebook, error) { return nil, nil },
-		listNotesFunc:      func(string) ([]joplin.Note, error) { return nil, nil },
-		getNoteFunc:        func(string) (*joplin.Note, error) { return nil, nil },
-		createNoteFunc:     func(string, string, string) (*joplin.Note, error) { return nil, nil },
-		appendToNoteFunc:   func(string, string) (*joplin.Note, error) { return nil, nil },
-		searchNotesFunc:    func(string) ([]joplin.Note, error) { return nil, nil },
-		createNotebookFunc: func(string, string) (*joplin.Notebook, error) { return nil, nil },
-	}
-
+	mock := newFullMockClient()
 	s := server.NewMCPServer("test", "0.1.0", server.WithToolCapabilities(true))
 	RegisterTools(s, mock)
-
 	// If RegisterTools compiles and doesn't panic, the interface wiring is correct.
-	// This test exists to catch regressions if RegisterTools signature changes.
+}
+
+func TestCreateTodo_Success(t *testing.T) {
+	mock := newFullMockClient()
+	mock.createTodoFunc = func(title, body, notebookID string, dueUnixMs int64) (*joplin.Note, error) {
+		return &joplin.Note{
+			ID:       "todo-1",
+			ParentID: notebookID,
+			Title:    title,
+			Body:     body,
+			IsTodo:   1,
+		}, nil
+	}
+	ts := newTestServer(t, mock)
+	result := callTool(t, ts, "create_todo", map[string]any{
+		"title":       "Buy milk",
+		"body":        "Get 2%",
+		"notebook_id": "nb-1",
+	})
+
+	if result.IsError {
+		t.Fatalf("unexpected error: %s", resultText(result))
+	}
+	text := resultText(result)
+	if !strings.Contains(text, "Todo created successfully") || !strings.Contains(text, "Buy milk") {
+		t.Errorf("expected success and title in response, got: %s", text)
+	}
+}
+
+func TestCreateTodo_MissingParams(t *testing.T) {
+	mock := newFullMockClient()
+	ts := newTestServer(t, mock)
+
+	result := callTool(t, ts, "create_todo", map[string]any{
+		"body":        "content",
+		"notebook_id": "nb-1",
+	})
+	if !result.IsError {
+		t.Fatal("expected IsError=true for missing title")
+	}
+
+	result = callTool(t, ts, "create_todo", map[string]any{
+		"title": "No notebook",
+		"body":  "content",
+	})
+	if !result.IsError {
+		t.Fatal("expected IsError=true for missing notebook_id")
+	}
+}
+
+func TestCreateTodo_InvalidDueDate(t *testing.T) {
+	mock := newFullMockClient()
+	ts := newTestServer(t, mock)
+	result := callTool(t, ts, "create_todo", map[string]any{
+		"title":       "Todo",
+		"body":        "body",
+		"notebook_id": "nb-1",
+		"due_date":   "not-a-date",
+	})
+	if !result.IsError {
+		t.Fatal("expected IsError=true for invalid due_date")
+	}
+	if text := resultText(result); !strings.Contains(text, "invalid due_date") {
+		t.Errorf("expected invalid due_date message, got: %s", text)
+	}
+}
+
+func TestMarkTodoCompleted_Success(t *testing.T) {
+	mock := newFullMockClient()
+	mock.markTodoCompletedFunc = func(noteID string) (*joplin.Note, error) {
+		return &joplin.Note{ID: noteID, Title: "Done", IsTodo: 1}, nil
+	}
+	ts := newTestServer(t, mock)
+	result := callTool(t, ts, "mark_todo_completed", map[string]any{"note_id": "todo-1"})
+
+	if result.IsError {
+		t.Fatalf("unexpected error: %s", resultText(result))
+	}
+	text := resultText(result)
+	if !strings.Contains(text, "marked as completed") {
+		t.Errorf("expected success message, got: %s", text)
+	}
+}
+
+func TestMarkTodoCompleted_MissingParam(t *testing.T) {
+	mock := newFullMockClient()
+	ts := newTestServer(t, mock)
+	result := callTool(t, ts, "mark_todo_completed", map[string]any{})
+	if !result.IsError {
+		t.Fatal("expected IsError=true for missing note_id")
+	}
+}
+
+func TestMarkTodoUncompleted_Success(t *testing.T) {
+	mock := newFullMockClient()
+	mock.markTodoUncompletedFunc = func(noteID string) (*joplin.Note, error) {
+		return &joplin.Note{ID: noteID, Title: "Reopened", IsTodo: 1}, nil
+	}
+	ts := newTestServer(t, mock)
+	result := callTool(t, ts, "mark_todo_uncompleted", map[string]any{"note_id": "todo-1"})
+
+	if result.IsError {
+		t.Fatalf("unexpected error: %s", resultText(result))
+	}
+	text := resultText(result)
+	if !strings.Contains(text, "marked as uncompleted") {
+		t.Errorf("expected success message, got: %s", text)
+	}
+}
+
+func TestListTodos_Success(t *testing.T) {
+	mock := newFullMockClient()
+	mock.listTodosFunc = func(notebookID string) ([]joplin.Note, error) {
+		return []joplin.Note{
+			{ID: "todo-1", Title: "Task A", IsTodo: 1},
+			{ID: "todo-2", Title: "Task B", IsTodo: 1},
+		}, nil
+	}
+	ts := newTestServer(t, mock)
+	result := callTool(t, ts, "list_todos", map[string]any{"notebook_id": "nb-1"})
+
+	if result.IsError {
+		t.Fatalf("unexpected error: %s", resultText(result))
+	}
+	text := resultText(result)
+	if !strings.Contains(text, "Found 2 todo(s)") {
+		t.Errorf("expected count in response, got: %s", text)
+	}
+}
+
+func TestListTodos_All(t *testing.T) {
+	mock := newFullMockClient()
+	mock.listTodosFunc = func(notebookID string) ([]joplin.Note, error) {
+		if notebookID != "" {
+			t.Errorf("expected empty notebook_id for all todos, got %q", notebookID)
+		}
+		return []joplin.Note{{ID: "todo-1", Title: "Only", IsTodo: 1}}, nil
+	}
+	ts := newTestServer(t, mock)
+	result := callTool(t, ts, "list_todos", map[string]any{})
+
+	if result.IsError {
+		t.Fatalf("unexpected error: %s", resultText(result))
+	}
+	text := resultText(result)
+	if !strings.Contains(text, "Found 1 todo(s)") {
+		t.Errorf("expected 1 todo, got: %s", text)
+	}
+}
+
+func TestListTodos_NoResults(t *testing.T) {
+	mock := newFullMockClient()
+	mock.listTodosFunc = func(string) ([]joplin.Note, error) { return nil, nil }
+	ts := newTestServer(t, mock)
+	result := callTool(t, ts, "list_todos", map[string]any{})
+
+	if result.IsError {
+		t.Fatalf("empty list should not be an error: %s", resultText(result))
+	}
+	if text := resultText(result); !strings.Contains(text, "No todos found") {
+		t.Errorf("expected 'No todos found', got: %s", text)
+	}
 }

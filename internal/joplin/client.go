@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 )
 
 // JoplinClient defines the interface for interacting with the Joplin API.
@@ -18,6 +19,10 @@ type JoplinClient interface {
 	AppendToNote(noteID, content string) (*Note, error)
 	SearchNotes(query string) ([]Note, error)
 	CreateNotebook(title, parentID string) (*Notebook, error)
+	CreateTodo(title, body, notebookID string, dueUnixMs int64) (*Note, error)
+	MarkTodoCompleted(noteID string) (*Note, error)
+	MarkTodoUncompleted(noteID string) (*Note, error)
+	ListTodos(notebookID string) ([]Note, error)
 }
 
 // Client wraps the Joplin REST API.
@@ -48,10 +53,13 @@ type Notebook struct {
 
 // Note represents a Joplin note.
 type Note struct {
-	ID       string `json:"id"`
-	ParentID string `json:"parent_id"`
-	Title    string `json:"title"`
-	Body     string `json:"body,omitempty"`
+	ID             string `json:"id"`
+	ParentID       string `json:"parent_id"`
+	Title          string `json:"title"`
+	Body           string `json:"body,omitempty"`
+	IsTodo         int    `json:"is_todo,omitempty"`
+	TodoDue        int64  `json:"todo_due,omitempty"`
+	TodoCompleted  int64  `json:"todo_completed,omitempty"`
 }
 
 // paginatedResponse is used to decode paginated Joplin API responses.
@@ -188,9 +196,9 @@ func (c *Client) ListNotes(notebookID string) ([]Note, error) {
 	return notes, nil
 }
 
-// GetNote fetches a note by ID, including its body.
+// GetNote fetches a note by ID, including its body and todo fields.
 func (c *Client) GetNote(noteID string) (*Note, error) {
-	data, err := c.doRequest("GET", fmt.Sprintf("/notes/%s?fields=id,parent_id,title,body", noteID), nil)
+	data, err := c.doRequest("GET", fmt.Sprintf("/notes/%s?fields=id,parent_id,title,body,is_todo,todo_due,todo_completed", noteID), nil)
 	if err != nil {
 		return nil, fmt.Errorf("getting note: %w", err)
 	}
@@ -299,4 +307,111 @@ func (c *Client) CreateNotebook(title, parentID string) (*Notebook, error) {
 		return nil, fmt.Errorf("decoding notebook: %w", err)
 	}
 	return &nb, nil
+}
+
+// CreateTodo creates a new to-do note in the specified notebook.
+// If dueUnixMs > 0, the todo will have a due date set.
+func (c *Client) CreateTodo(title, body, notebookID string, dueUnixMs int64) (*Note, error) {
+	payload := map[string]interface{}{
+		"title":     title,
+		"body":      body,
+		"parent_id": notebookID,
+		"is_todo":   1,
+	}
+	if dueUnixMs > 0 {
+		payload["todo_due"] = dueUnixMs
+	}
+	jsonData, err := json.Marshal(payload)
+	if err != nil {
+		return nil, fmt.Errorf("encoding todo: %w", err)
+	}
+
+	data, err := c.doRequest("POST", "/notes", strings.NewReader(string(jsonData)))
+	if err != nil {
+		return nil, fmt.Errorf("creating todo: %w", err)
+	}
+
+	var note Note
+	if err := json.Unmarshal(data, &note); err != nil {
+		return nil, fmt.Errorf("decoding note: %w", err)
+	}
+	return &note, nil
+}
+
+// MarkTodoCompleted marks a to-do note as completed (sets todo_completed to current time in ms).
+func (c *Client) MarkTodoCompleted(noteID string) (*Note, error) {
+	completedMs := time.Now().UnixMilli()
+	payload := map[string]int64{
+		"todo_completed": completedMs,
+	}
+	jsonData, err := json.Marshal(payload)
+	if err != nil {
+		return nil, fmt.Errorf("encoding update: %w", err)
+	}
+
+	data, err := c.doRequest("PUT", fmt.Sprintf("/notes/%s", noteID), strings.NewReader(string(jsonData)))
+	if err != nil {
+		return nil, fmt.Errorf("marking todo completed: %w", err)
+	}
+
+	var note Note
+	if err := json.Unmarshal(data, &note); err != nil {
+		return nil, fmt.Errorf("decoding note: %w", err)
+	}
+	return &note, nil
+}
+
+// MarkTodoUncompleted marks a to-do note as not completed (sets todo_completed to 0).
+func (c *Client) MarkTodoUncompleted(noteID string) (*Note, error) {
+	payload := map[string]int64{
+		"todo_completed": 0,
+	}
+	jsonData, err := json.Marshal(payload)
+	if err != nil {
+		return nil, fmt.Errorf("encoding update: %w", err)
+	}
+
+	data, err := c.doRequest("PUT", fmt.Sprintf("/notes/%s", noteID), strings.NewReader(string(jsonData)))
+	if err != nil {
+		return nil, fmt.Errorf("marking todo uncompleted: %w", err)
+	}
+
+	var note Note
+	if err := json.Unmarshal(data, &note); err != nil {
+		return nil, fmt.Errorf("decoding note: %w", err)
+	}
+	return &note, nil
+}
+
+// noteFieldsWithTodo is the fields query for note responses that include todo state.
+const noteFieldsWithTodo = "id,parent_id,title,body,is_todo,todo_due,todo_completed"
+
+// ListTodos returns to-do notes, optionally scoped to a notebook.
+// If notebookID is empty, returns all todos; otherwise only todos in that notebook.
+func (c *Client) ListTodos(notebookID string) ([]Note, error) {
+	params := url.Values{}
+	params.Set("fields", noteFieldsWithTodo)
+
+	var rawItems []json.RawMessage
+	var err error
+	if notebookID != "" {
+		rawItems, err = c.fetchAllPages(fmt.Sprintf("/folders/%s/notes", notebookID), params)
+	} else {
+		rawItems, err = c.fetchAllPages("/notes", params)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("listing todos: %w", err)
+	}
+
+	var notes []Note
+	for _, raw := range rawItems {
+		var n Note
+		if err := json.Unmarshal(raw, &n); err != nil {
+			return nil, fmt.Errorf("decoding note: %w", err)
+		}
+		if n.IsTodo == 1 {
+			notes = append(notes, n)
+		}
+	}
+	return notes, nil
 }
