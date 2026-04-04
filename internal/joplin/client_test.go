@@ -370,7 +370,7 @@ func TestCreateTodo(t *testing.T) {
 			t.Errorf("expected POST /notes, got %s %s", r.Method, r.URL.Path)
 		}
 		body, _ := io.ReadAll(r.Body)
-		var payload map[string]interface{}
+		var payload map[string]any
 		json.Unmarshal(body, &payload)
 		if title, _ := payload["title"].(string); title != "My Todo" {
 			t.Errorf("expected title 'My Todo', got %v", payload["title"])
@@ -411,7 +411,7 @@ func TestCreateTodo_WithDue(t *testing.T) {
 	dueMs := int64(1735689600000) // 2025-01-01 00:00:00 UTC
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
-		var payload map[string]interface{}
+		var payload map[string]any
 		json.Unmarshal(body, &payload)
 		if payload["is_todo"].(float64) != 1 {
 			t.Error("expected is_todo 1")
@@ -420,11 +420,11 @@ func TestCreateTodo_WithDue(t *testing.T) {
 			t.Errorf("expected todo_due %d, got %v", dueMs, payload["todo_due"])
 		}
 		json.NewEncoder(w).Encode(Note{
-			ID:        "todo-2",
-			ParentID:  "nb-1",
-			Title:     "Due Todo",
-			IsTodo:    1,
-			TodoDue:   dueMs,
+			ID:       "todo-2",
+			ParentID: "nb-1",
+			Title:    "Due Todo",
+			IsTodo:   1,
+			TodoDue:  dueMs,
 		})
 	}))
 	defer ts.Close()
@@ -448,16 +448,16 @@ func TestMarkTodoCompleted(t *testing.T) {
 			t.Errorf("expected path /notes/todo-1, got %s", r.URL.Path)
 		}
 		body, _ := io.ReadAll(r.Body)
-		var payload map[string]interface{}
+		var payload map[string]any
 		json.Unmarshal(body, &payload)
 		if completed, ok := payload["todo_completed"].(float64); !ok || completed <= 0 {
 			t.Errorf("expected todo_completed to be positive timestamp, got %v", payload["todo_completed"])
 		}
 		json.NewEncoder(w).Encode(Note{
-			ID:             "todo-1",
-			Title:          "Done",
-			IsTodo:         1,
-			TodoCompleted:  1704067200000,
+			ID:            "todo-1",
+			Title:         "Done",
+			IsTodo:        1,
+			TodoCompleted: 1704067200000,
 		})
 	}))
 	defer ts.Close()
@@ -478,7 +478,7 @@ func TestMarkTodoUncompleted(t *testing.T) {
 			t.Errorf("expected PUT /notes/todo-1, got %s %s", r.Method, r.URL.Path)
 		}
 		body, _ := io.ReadAll(r.Body)
-		var payload map[string]interface{}
+		var payload map[string]any
 		json.Unmarshal(body, &payload)
 		if completed, _ := payload["todo_completed"].(float64); completed != 0 {
 			t.Errorf("expected todo_completed 0, got %v", payload["todo_completed"])

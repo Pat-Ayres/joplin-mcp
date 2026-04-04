@@ -53,13 +53,13 @@ type Notebook struct {
 
 // Note represents a Joplin note.
 type Note struct {
-	ID             string `json:"id"`
-	ParentID       string `json:"parent_id"`
-	Title          string `json:"title"`
-	Body           string `json:"body,omitempty"`
-	IsTodo         int    `json:"is_todo,omitempty"`
-	TodoDue        int64  `json:"todo_due,omitempty"`
-	TodoCompleted  int64  `json:"todo_completed,omitempty"`
+	ID            string `json:"id"`
+	ParentID      string `json:"parent_id"`
+	Title         string `json:"title"`
+	Body          string `json:"body,omitempty"`
+	IsTodo        int    `json:"is_todo,omitempty"`
+	TodoDue       int64  `json:"todo_due,omitempty"`
+	TodoCompleted int64  `json:"todo_completed,omitempty"`
 }
 
 // paginatedResponse is used to decode paginated Joplin API responses.
@@ -312,7 +312,7 @@ func (c *Client) CreateNotebook(title, parentID string) (*Notebook, error) {
 // CreateTodo creates a new to-do note in the specified notebook.
 // If dueUnixMs > 0, the todo will have a due date set.
 func (c *Client) CreateTodo(title, body, notebookID string, dueUnixMs int64) (*Note, error) {
-	payload := map[string]interface{}{
+	payload := map[string]any{
 		"title":     title,
 		"body":      body,
 		"parent_id": notebookID,
